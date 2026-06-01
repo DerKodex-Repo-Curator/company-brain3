@@ -48,9 +48,13 @@
     th { background: var(--cb-primary); color: var(--cb-background); }
     hr { border: 0; border-top: 1px solid var(--cb-muted); margin: 2rem 0; }
     footer { margin-top: 2rem; color: var(--cb-muted); font-size: 0.85rem; }
+    .brand-logo { display: block; margin: 0 auto 1.5rem; max-width: 180px; max-height: 96px; }
   </style>
 </head>
 <body>
+{% if logo_data_url %}
+<img src="{{ logo_data_url }}" alt="" class="brand-logo" />
+{% endif %}
 {{ body_html }}
 </body>
 </html>

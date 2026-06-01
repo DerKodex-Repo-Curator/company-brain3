@@ -123,6 +123,12 @@ Dates can be layered on later once the project owner has a sense of velocity. Or
 
 ---
 
+## v0.8.1 — Branding logo embedding (out-of-band)
+
+**Status:** ✅ shipped 2026-06-01. Closes the gap between "`_branding/logo.png` is detected by the loader" (true since v0.3.0) and "the logo actually appears in rendered output" (was not implemented). The docx writer now inserts a centered logo at the top of the document; the HTML wrapper inlines a base64 data URL so the rendered HTML stays self-contained. Surfaced during the Panda Surgical public-research dogfood — branded colors landed correctly, the logo file did not. See [CHANGELOG](CHANGELOG.md) for the full delta.
+
+---
+
 ## v1.0.0 — Release tag and announcement
 
 **Included:**

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import date
 from pathlib import Path
 
@@ -246,3 +247,136 @@ def test_html_wrapper_override_takes_precedence(tmp_path: Path) -> None:
 def test_render_mrd_rejects_unknown_format() -> None:
     with pytest.raises(ValueError, match="unknown output_format"):
         render_mrd(MEDDEV_VAULT, output_format="pdf", write=False)
+
+
+# ---------------------------------------------------------------------------
+# Branding logo embedding (v0.8.1)
+# ---------------------------------------------------------------------------
+
+
+# A 1x1 transparent PNG (canonical fixture; ~70 bytes). Small enough to keep
+# tests fast, real enough that python-docx will round-trip it through the
+# zip's media/ folder.
+_TINY_PNG = base64.b64decode(
+    b"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgAAIAAAUAAeImBZsAAAAASUVORK5CYII="
+)
+
+
+def _make_vault_with_logo(tmp_path: Path) -> Path:
+    vault = tmp_path / "v"
+    scaffold(vault, "default", init_git=False)
+    (vault / "_branding" / "logo.png").write_bytes(_TINY_PNG)
+    return vault
+
+
+def test_html_omits_logo_when_no_logo_file(tmp_path: Path) -> None:
+    """Baseline: without a logo file the wrapper renders no <img>."""
+
+    vault = tmp_path / "v"
+    scaffold(vault, "default", init_git=False)
+    out = tmp_path / "mrd.html"
+    render_mrd(
+        vault,
+        output_path=out,
+        generation_date=date(2026, 5, 24),
+        output_format="html",
+    )
+    html = out.read_text()
+    assert 'class="brand-logo"' not in html
+    assert "data:image/png;base64," not in html
+
+
+def test_html_embeds_logo_as_base64_data_url(tmp_path: Path) -> None:
+    vault = _make_vault_with_logo(tmp_path)
+    out = tmp_path / "mrd.html"
+    render_mrd(
+        vault,
+        output_path=out,
+        generation_date=date(2026, 5, 24),
+        output_format="html",
+    )
+    html = out.read_text()
+    assert 'class="brand-logo"' in html
+    # The PNG MIME type is in the data URL prefix.
+    assert "data:image/png;base64," in html
+    # Self-contained — no relative path leaked.
+    assert "logo.png" not in html
+
+
+def test_html_with_logo_is_idempotent(tmp_path: Path) -> None:
+    vault = _make_vault_with_logo(tmp_path)
+    a = tmp_path / "a.html"
+    b = tmp_path / "b.html"
+    pinned = date(2026, 5, 24)
+    render_mrd(vault, output_path=a, generation_date=pinned, output_format="html")
+    render_mrd(vault, output_path=b, generation_date=pinned, output_format="html")
+    assert a.read_bytes() == b.read_bytes()
+
+
+def test_docx_omits_logo_when_no_logo_file(tmp_path: Path) -> None:
+    """Baseline: without a logo file the docx zip has no media/ entries."""
+
+    vault = tmp_path / "v"
+    scaffold(vault, "default", init_git=False)
+    out = tmp_path / "mrd.docx"
+    render_mrd(
+        vault,
+        output_path=out,
+        generation_date=date(2026, 5, 24),
+        output_format="docx",
+    )
+    import zipfile
+
+    with zipfile.ZipFile(out) as z:
+        media_entries = [n for n in z.namelist() if n.startswith("word/media/")]
+    assert media_entries == []
+
+
+def test_docx_embeds_logo_in_media_folder(tmp_path: Path) -> None:
+    vault = _make_vault_with_logo(tmp_path)
+    out = tmp_path / "mrd.docx"
+    render_mrd(
+        vault,
+        output_path=out,
+        generation_date=date(2026, 5, 24),
+        output_format="docx",
+    )
+    import zipfile
+
+    with zipfile.ZipFile(out) as z:
+        media_entries = sorted(n for n in z.namelist() if n.startswith("word/media/"))
+        assert len(media_entries) == 1
+        # The image bytes round-trip — python-docx stores PNGs uncompressed
+        # and the zip's deflate may or may not shrink them, so compare bytes
+        # not size.
+        assert z.read(media_entries[0]) == _TINY_PNG
+
+
+def test_docx_with_logo_is_byte_identical_on_repeat(tmp_path: Path) -> None:
+    """Embedding a logo must not break the v0.6.0 byte-determinism contract."""
+
+    vault = _make_vault_with_logo(tmp_path)
+    a = tmp_path / "a.docx"
+    b = tmp_path / "b.docx"
+    pinned = date(2026, 5, 24)
+    render_mrd(vault, output_path=a, generation_date=pinned, output_format="docx")
+    render_mrd(vault, output_path=b, generation_date=pinned, output_format="docx")
+    assert a.read_bytes() == b.read_bytes()
+
+
+def test_docx_with_logo_still_validates_paragraph_structure(tmp_path: Path) -> None:
+    """The logo paragraph adds one centered run at the top; the rest of the
+    document structure should be unchanged."""
+
+    vault = _make_vault_with_logo(tmp_path)
+    out = tmp_path / "mrd.docx"
+    render_mrd(
+        vault,
+        output_path=out,
+        generation_date=date(2026, 5, 24),
+        output_format="docx",
+    )
+    doc = Document(out)
+    # First paragraph is now the logo (no text), second is the H1 title.
+    assert doc.paragraphs[0].text == ""
+    assert doc.paragraphs[1].text == "Marketing Requirements Document"

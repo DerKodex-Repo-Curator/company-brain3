@@ -11,14 +11,22 @@ generators actually emit:
 * Horizontal rule (``---`` on its own line)
 
 Notably **does not** support: ordered lists, nested lists, fenced code
-blocks, images, links (links pass through as plain text). The MRD and
-one-pager templates were designed not to need those. If a future
-generator does, extend here rather than reaching for pandoc — we want
-``uv tool install`` to be enough to use ``cb render``.
+blocks, inline images inside markdown, links (links pass through as
+plain text). The MRD and one-pager templates were designed not to need
+those. If a future generator does, extend here rather than reaching for
+pandoc — we want ``uv tool install`` to be enough to use ``cb render``.
 
-Branding integration: H1/H2/H3 colors come from the branding primary
-color; body font name from ``font_family_body`` (the font file itself is
-not embedded — docx renders with whatever font the reader has installed).
+Branding integration:
+
+* H1/H2/H3 colors come from the branding primary / secondary colors.
+* Body font name from ``font_family_body`` (the font file itself is
+  not embedded — docx renders with whatever font the reader has
+  installed).
+* When ``branding.logo_path`` resolves, the logo is inserted as a
+  centered image at the top of the document (~1.5 inches wide). The
+  image bytes embed into the docx zip as ``media/image1.png``; the
+  underlying deterministic zip normalization keeps re-renders
+  byte-identical given the same logo file.
 """
 
 from __future__ import annotations
@@ -30,7 +38,7 @@ from io import BytesIO
 from pathlib import Path
 
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Inches, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 from .engine import Branding
@@ -76,6 +84,9 @@ def render_docx(
     _apply_deterministic_core_properties(
         doc, generation_date or date.today()
     )
+
+    if branding.logo_path is not None and branding.logo_path.is_file():
+        _add_logo_header(doc, branding.logo_path)
 
     primary_rgb = _hex_to_rgb(branding.primary)
     secondary_rgb = _hex_to_rgb(branding.secondary)
@@ -136,6 +147,31 @@ def render_docx(
 # ---------------------------------------------------------------------------
 # Block emitters
 # ---------------------------------------------------------------------------
+
+
+_LOGO_WIDTH = Inches(1.5)
+
+
+def _add_logo_header(doc, logo_path: Path) -> None:
+    """Insert the branding logo at the top of the document, centered.
+
+    Width is fixed at 1.5 inches so re-renders against the same logo
+    file produce byte-identical zip entries. python-docx materializes
+    the embedded image as ``word/media/image1.png`` (or .svg / .jpg per
+    the source extension) and registers the relationship and content
+    type automatically — :func:`_normalize_docx_zip` picks the new
+    entries up in its sort + epoch-stamp pass, so determinism survives.
+
+    Silently skipped when the logo path does not resolve to a file. SVG
+    logos are accepted by python-docx but render in Word as text when
+    the reader lacks SVG support; PNG / JPG are safer for cross-reader
+    output.
+    """
+
+    para = doc.add_paragraph()
+    para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = para.add_run()
+    run.add_picture(str(logo_path), width=_LOGO_WIDTH)
 
 
 def _add_heading(doc, text: str, *, level: int, color: RGBColor) -> None:

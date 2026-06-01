@@ -4,6 +4,32 @@ All notable changes to company-brain. Format follows [Keep a Changelog](https://
 
 The schema is data; profile / node-type / edge-type additions are minor-version-breaking only if they require existing vaults to change. Additions that older vaults can ignore are non-breaking.
 
+## [0.8.1] — 2026-06-01
+
+Branding logo embedding. The branding loader has detected `_branding/logo.png` since v0.3.0, but no template or writer actually consumed it — the README's "primary logo used in document headers" was aspirational. v0.8.1 closes that gap end-to-end: docx renders embed the logo as a centered image at the top of the document, HTML renders embed it as a base64 data URL inside the wrapper. Surfaced 2026-06-01 during dogfood on the [Panda Surgical](https://www.panda-surgical.com/) public-research vault.
+
+### Added
+
+- **`_add_logo_header` in `docx_writer.py`** — when `branding.logo_path` resolves, the docx render inserts a centered logo paragraph (1.5 inches wide) before the document title. Image bytes embed as `word/media/image1.png` via python-docx's standard image-relationship machinery. The existing `_normalize_docx_zip` pass picks up the new entries in its sort + epoch-stamp normalization, so byte-determinism survives.
+- **`_logo_to_data_url` in `html_writer.py`** — encodes the logo as a `data:<mime>;base64,...` URL and threads it into the wrapper as `logo_data_url`. PNG, JPG, JPEG, and SVG suffixes are recognized. Self-contained HTML — the rendered file can be emailed without losing branding.
+- **`html-wrapper.html.j2`** — new `<img class="brand-logo">` block guarded by `{% if logo_data_url %}`, centered with `max-width: 180px; max-height: 96px;` so logos of varying aspect ratios stay proportional. Backward-compatible: a vault without a logo file renders identically to v0.8.0.
+- **7 new tests** in [`tests/test_render_formats.py`](tests/test_render_formats.py): docx-with-logo embeds the bytes in `word/media/`, docx-without-logo has no `media/` entries, docx-with-logo stays byte-identical on repeat (the v0.6.0 determinism contract holds with the new image), html-with-logo includes a base64 data URL, html-without-logo omits the `<img>` tag entirely, html-with-logo is idempotent, and the docx-with-logo paragraph structure adds exactly one leading paragraph for the logo without disturbing the rest of the document.
+
+### Changed
+
+- **Version stamp** in `pyproject.toml`, `src/company_brain/__init__.py`, and footer lines of every generated document: `0.8.0` → `0.8.1`.
+
+### Migration
+
+- **Existing vaults: no action required.** Drop a `logo.png` (or `.jpg`, `.jpeg`, `.svg`) into `<vault>/_branding/` to opt in. Without it, output is identical to v0.8.0 modulo the version stamp.
+- **Adopters with a logo already in place** (the file's been valid input since v0.3.0): the next `cb render mrd --format docx` and `cb render <doc> --format html` will pick it up automatically.
+
+### Tests
+
+418 passing (was 411 in v0.8.0; +7 new). Ruff clean.
+
+---
+
 ## [0.8.0] — 2026-05-27
 
 Primary-entity marking. Closes the alphabetical-sort gap that surfaced during meta-vault dogfooding: when a vault has more than one persona, product, or competitor, the doc-generators previously picked one by id sort, which produced wrong representatives whenever entities were named semantically (`persona-founder`, `persona-lead-product-manager`, `persona-lead-marketing-manager`) instead of by priority prefix. v0.8.0 adds an optional `primary: bool` field on the base frontmatter; generators check it first and fall back to alphabetical with a footer note. Backward-compatible: pre-existing vaults render unchanged except for the new fallback note.
